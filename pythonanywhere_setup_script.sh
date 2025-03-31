@@ -1,7 +1,4 @@
-#!/bin/bash
-# Script to set up Mood Tracker on PythonAnywhere
 
-# Print colorful messages
 print_green() {
     echo -e "\e[32m$1\e[0m"
 }
@@ -18,14 +15,11 @@ print_blue() {
     echo -e "\e[34m$1\e[0m"
 }
 
-# Create directory structure
 print_blue "=== Setting up Mood Tracker ==="
 print_yellow "Creating project directory..."
 
-# Create the main project directory
 mkdir -p ~/mood-tracker
 
-# Clone the repository if GitHub URL is provided
 if [ "$1" != "" ]; then
     print_yellow "Cloning repository from $1..."
     git clone "$1" ~/mood-tracker
@@ -38,13 +32,11 @@ if [ "$1" != "" ]; then
         cd ~/mood-tracker
     fi
 else
-    # Navigate to the project directory
     cd ~/mood-tracker
     print_green "Directory created: ~/mood-tracker"
     print_yellow "You'll need to upload your files manually or clone your repository."
 fi
 
-# Create virtual environment
 print_yellow "Creating virtual environment..."
 python3 -m venv venv
 
@@ -60,21 +52,17 @@ fi
 
 print_green "Virtual environment created successfully!"
 
-# Activate virtual environment
 source venv/bin/activate
 print_green "Virtual environment activated!"
 
-# Create basic directory structure
 mkdir -p static
 mkdir -p plots
 
-# Create a basic README if it doesn't exist
 if [ ! -f README.md ]; then
     echo "# Mood Tracker" > README.md
     echo "A FastAPI application for tracking and predicting mood based on daily habits." >> README.md
 fi
 
-# Create a basic requirements.txt if it doesn't exist
 if [ ! -f requirements.txt ]; then
     cat > requirements.txt << EOL
 fastapi>=0.68.0
@@ -91,7 +79,6 @@ EOL
     print_yellow "Created basic requirements.txt - you may need to customize it."
 fi
 
-# Create WSGI adapter if not exists
 if [ ! -f wsgi_adapter.py ]; then
     cat > wsgi_adapter.py << EOL
 from fastapi.middleware.wsgi import WSGIMiddleware
