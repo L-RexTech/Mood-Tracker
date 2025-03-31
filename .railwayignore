@@ -4,5 +4,7 @@ __pycache__/
 *.pyo
 *.pyd
 .DS_Store
-training_data*.csv
+training_data.csv
+training_data_train.csv
+training_data_test.csv
 plots/
