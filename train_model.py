@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import json
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.model_selection import RandomizedSearchCV, KFold
 from pathlib import Path
 
 from data_generator import generate_synthetic_data, train_test_split_data
@@ -98,20 +99,73 @@ def evaluate_model(model, test_data_path='training_data_test.csv'):
     return metrics
 
 def analyze_feature_importance(model, feature_names):
-    """Analyze and visualize feature importance"""
+    """Analyze and visualize feature importance with proper feature name generation"""
     try:
-        # Get feature importances (works for tree-based models like Random Forest)
+        # Get feature importances (works for tree-based models like Random Forest or GradientBoosting)
         importances = model.named_steps['regressor'].feature_importances_
         
-        # Map importances to feature names
-        # Note: This is a simplification and might not perfectly map to the transformed features
-        indices = np.argsort(importances)[::-1]
+        # Generate accurate feature names by extracting from the pipeline if possible
+        try:
+            # Try to extract feature names from the preprocessor
+            preprocessor = model.named_steps['preprocessor']
+            transformed_feature_names = []
+            
+            # Get the transformed feature names for categorical features
+            for name, transformer, column in preprocessor.transformers_:
+                if name == 'cat' and hasattr(transformer, 'get_feature_names_out'):
+                    transformed_feature_names.extend(transformer.get_feature_names_out())
+                elif name == 'cat':  # Fallback for older scikit-learn versions
+                    for col in column:
+                        for category in ['Low', 'Medium', 'High', 'Healthy', 'Moderate', 'Unhealthy']:
+                            transformed_feature_names.append(f"{col}_{category}")
+            
+            # For numerical features with polynomial expansion, generate appropriate names
+            numerical_features = ['water_intake', 'people_met', 'exercise', 'sleep', 
+                                'screen_time', 'outdoor_time']
+            
+            # Add base features
+            for feature in numerical_features:
+                transformed_feature_names.append(feature)
+            
+            # Add quadratic terms
+            for feature in numerical_features:
+                transformed_feature_names.append(f"{feature}^2")
+            
+            # Add interaction terms
+            for i, feat1 in enumerate(numerical_features):
+                for feat2 in numerical_features[i+1:]:
+                    transformed_feature_names.append(f"{feat1} × {feat2}")
+                    
+            # Add interaction feature names
+            interaction_feature_names = [
+                'sleep_screen_ratio', 'exercise_outdoor', 'hydration_exercise',
+                'social_quality', 'sleep_quality', 'work_life_balance', 
+                'burnout_risk', 'wellness_score'
+            ]
+            transformed_feature_names.extend(interaction_feature_names)
+            
+            print(f"Generated {len(transformed_feature_names)} feature names for {len(importances)} features")
+            
+            # If count still doesn't match, use generic feature names
+            if len(transformed_feature_names) != len(importances):
+                transformed_feature_names = [f"Feature {i}" for i in range(len(importances))]
+                
+            feature_names = transformed_feature_names
+            
+        except Exception as e:
+            print(f"Could not extract feature names: {e}")
+            # Fall back to generic feature names
+            feature_names = [f"Feature {i}" for i in range(len(importances))]
         
-        # Create a plot
-        plt.figure(figsize=(12, 8))
-        plt.title('Feature Importance')
-        plt.bar(range(len(importances)), importances[indices])
-        plt.xticks(range(len(importances)), [feature_names[i] for i in indices], rotation=45)
+        # Get the top 20 features (or all if less than 20)
+        num_to_show = min(20, len(importances))
+        indices = np.argsort(importances)[::-1][:num_to_show]
+        
+        # Create a plot showing only the top features
+        plt.figure(figsize=(14, 10))
+        plt.title(f'Top {num_to_show} Feature Importances')
+        plt.bar(range(num_to_show), importances[indices])
+        plt.xticks(range(num_to_show), [str(feature_names[i])[:30] for i in indices], rotation=45)
         plt.tight_layout()
         
         # Save the plot
@@ -128,8 +182,50 @@ def analyze_feature_importance(model, feature_names):
         
     except Exception as e:
         print(f"Could not analyze feature importance: {e}")
+        print("This is not critical and won't affect model performance.")
 
-def train_and_evaluate(num_samples=2000, force_retrain=False):
+def tune_hyperparameters(X_train, y_train):
+    """Tune model hyperparameters using RandomizedSearchCV"""
+    from sklearn.ensemble import GradientBoostingRegressor
+    
+    print("\nPerforming hyperparameter tuning...")
+    
+    # Define the parameter grid to search
+    param_grid = {
+        'n_estimators': [100, 200, 300, 400, 500],
+        'learning_rate': [0.01, 0.05, 0.1, 0.15, 0.2],
+        'max_depth': [3, 4, 5, 6, 7],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4],
+        'subsample': [0.6, 0.7, 0.8, 0.9, 1.0]
+    }
+    
+    # Create the model
+    gb = GradientBoostingRegressor(random_state=42)
+    
+    # Set up cross-validation
+    cv = KFold(n_splits=5, shuffle=True, random_state=42)
+    
+    # Create and run the random search
+    random_search = RandomizedSearchCV(
+        estimator=gb,
+        param_distributions=param_grid,
+        n_iter=50,
+        scoring='neg_mean_squared_error',
+        cv=cv,
+        random_state=42,
+        n_jobs=-1,
+        verbose=1
+    )
+    
+    random_search.fit(X_train, y_train)
+    
+    print(f"Best parameters: {random_search.best_params_}")
+    print(f"Best RMSE: {(-random_search.best_score_)**0.5:.3f}")
+    
+    return random_search.best_params_
+
+def train_and_evaluate(num_samples=5000, force_retrain=False, tune_params=False):
     """Generate data, train model, and evaluate performance"""
     # Step 1: Generate synthetic data if it doesn't exist
     if not os.path.exists('training_data.csv') or force_retrain:
@@ -142,31 +238,27 @@ def train_and_evaluate(num_samples=2000, force_retrain=False):
         train_test_split_data()
     
     # Step 3: Train the model
-    print("Training the regression model...")
+    print("Training the advanced regression model...")
     model = create_and_train_model()
     
     # Step 4: Save the model
     save_model(model)
     
     # Step 5: Evaluate the model
-    evaluate_model(model)
+    metrics = evaluate_model(model)
     
     # Step 6: Analyze feature importance
-    feature_names = ['water_intake', 'people_met', 'exercise', 'sleep', 
-                     'screen_time', 'outdoor_time', 'stress_level_Low',
-                     'stress_level_Medium', 'stress_level_High',
-                     'food_quality_Healthy', 'food_quality_Moderate',
-                     'food_quality_Unhealthy']
-    analyze_feature_importance(model, feature_names)
+    analyze_feature_importance(model, [])
     
-    return model
+    return model, metrics
 
 def main():
     parser = argparse.ArgumentParser(description="Train a mood prediction model")
-    parser.add_argument("--samples", type=int, default=2000, help="Number of samples to generate")
+    parser.add_argument("--samples", type=int, default=5000, help="Number of samples to generate")
     parser.add_argument("--force", action="store_true", help="Force regenerate data and retrain")
     parser.add_argument("--evaluate", action="store_true", help="Only evaluate an existing model")
     parser.add_argument("--accuracy", action="store_true", help="Show accuracy metrics for existing model")
+    parser.add_argument("--tune", action="store_true", help="Perform hyperparameter tuning")
     args = parser.parse_args()
     
     if args.accuracy:
@@ -193,7 +285,7 @@ def main():
         if model:
             evaluate_model(model)
     else:
-        train_and_evaluate(num_samples=args.samples, force_retrain=args.force)
+        train_and_evaluate(num_samples=args.samples, force_retrain=args.force, tune_params=args.tune)
     
 if __name__ == "__main__":
     main()

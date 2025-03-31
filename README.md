@@ -47,6 +47,21 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 python3 -m pip install -r requirements.txt
 ```
 
+### macOS Specific Setup
+
+If you encounter an error about "libomp.dylib not found" when running the model, you need to install OpenMP:
+
+```bash
+# Install Homebrew if you don't have it
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install OpenMP library
+brew install libomp
+
+# Then try running the model again
+python3 train_model.py
+```
+
 ### 2. Generate Data and Train the Model
 
 ```bash
@@ -89,10 +104,9 @@ The mood prediction model typically achieves:
 - Mean Absolute Error (MAE): ~0.3-0.5 points on the 0-10 scale
 - 85-95% of predictions within 1 point of the actual mood score
 
-You can check your model's actual performance by running:
-```bash
-python3 train_model.py --accuracy
-```
+### Understanding Accuracy Metrics
+
+When evaluating the model, you'll see metrics like:
 
 ## API Usage
 

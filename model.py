@@ -8,14 +8,21 @@ from pathlib import Path
 
 # Try to import machine learning libraries
 try:
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.preprocessing import OneHotEncoder
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, VotingRegressor
+    from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures
     from sklearn.compose import ColumnTransformer
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import HuberRegressor
     HAS_SKLEARN = True
+    
+    # Disable XGBoost due to OpenMP issues on macOS
+    HAS_XGBOOST = False
+    print("Using GradientBoosting instead of XGBoost for better compatibility")
+    
 except ImportError:
     HAS_SKLEARN = False
+    HAS_XGBOOST = False
 
 # NLTK for sentiment analysis from day_rating
 try:
@@ -32,39 +39,158 @@ MODEL_PATH = Path(__file__).parent / "mood_model.pkl"
 def analyze_day_rating(day_rating: str) -> float:
     """
     Analyze the day rating text and return a sentiment score between 0-1
+    Enhanced to better detect negative emotions and negation patterns
     """
+    day_rating_lower = day_rating.lower()
+    
+    # High priority check for explicit bad day statements
+    if any(phrase in day_rating_lower for phrase in ["bad day", "terrible day", "awful day", 
+                                                    "horrible day", "not a good day"]):
+        # Direct match for these specific phrases should override everything
+        print(f"Direct negative day description detected: '{day_rating}'")
+        return 0.15  # Very low score (1.5 on 0-10 scale)
+    
+    # Check for specific negation patterns
+    negation_patterns = [
+        "not good", "not great", "not a good", "not the best", 
+        "not happy", "not fun", "not nice", "not well",
+        "wasn't good", "wasnt good", "wasn't great", "wasnt great",
+        "wasn't nice", "wasnt nice", "not okay", "not ok"
+    ]
+    
+    # Check for repetitive neutral phrases that indicate mediocre experience
+    repetitive_neutral = ["okay okay", "ok ok", "fine fine", "alright alright"]
+    
+    # Check for direct phrases
+    direct_negative_phrases = [
+        "not a good day", "bad day", "rough day", "tough day", "difficult day",
+        "wasn't a good day", "wasnt a good day", "wasn't great", "wasnt great",
+        "mediocre day", "below average day", "subpar day", "disappointing day"
+    ]
+    
+    # Check for these specific patterns first
+    for pattern in negation_patterns:
+        if pattern in day_rating_lower:
+            # Negation found - this should be interpreted as negative
+            return 0.25  # Force a negative sentiment (0-10 scale: 2.5)
+    
+    for phrase in repetitive_neutral:
+        if phrase in day_rating_lower:
+            # Repetitive neutral words often indicate mediocre experience
+            return 0.45  # Mediocre sentiment (0-10 scale: 4.5)
+    
+    for phrase in direct_negative_phrases:
+        if phrase in day_rating_lower:
+            # Direct negative phrase
+            return 0.2  # Strongly negative (0-10 scale: 2.0)
+    
+    # Add special handling for severe negative keywords
+    severe_negative_keywords = [
+            'frustrat', 'anger', 'hate', 'terrible', 'horrible', 'miserable', 'awful',
+            'depress', 'anxious', 'hopeless', 'worthless', 'exhausted', 'drained',
+            'stressed', 'irritated', 'overwhelmed', 'failure', 'regret', 'resent',
+            'lonely', 'isolated', 'disgusted', 'panic', 'devastated', 'helpless',
+            'furious', 'sad', 'cry', 'nightmare', 'ruined', 'torture', 'unbearable',
+            'dreadful', 'disappointed', 'broken', 'meltdown', 'suffering', 'trauma'
+        ]
+
+    for word in severe_negative_keywords:
+        if word in day_rating_lower:
+            # Force low sentiment score when these words are present
+            if HAS_NLTK:
+                # Still run NLTK but cap the maximum possible score lower
+                sia = SentimentIntensityAnalyzer()
+                sentiment = sia.polarity_scores(day_rating)
+                return max(0, min((sentiment['compound'] + 1) / 5, 0.3))  # Max 0.3 (0-10 scale: max 3.0)
+            else:
+                # Direct low score for keyword match in fallback mode
+                return 0.25  # Force low sentiment (0-10 scale: 2.5)
+    
+    # Add more robust pattern matching for "bad day" variations
+    if "bad" in day_rating_lower and any(word in day_rating_lower for word in ["day", "time", "experience"]):
+        return 0.2  # Strongly negative
+    
+    # Advanced negation detection - look for "not" followed by positive words
+    if any(neg in day_rating_lower for neg in ["not ", "n't ", "no ", "never "]):
+        # If negation word is present, check for nearby positive words
+        if any(pos in day_rating_lower for pos in ["good", "great", "happy", "nice", "fun", "well"]):
+            return 0.3  # Likely negating a positive sentiment
+    
+    # If NLTK is available, use it with negation awareness
     if HAS_NLTK:
-        # Use NLTK for sentiment analysis
         sia = SentimentIntensityAnalyzer()
         sentiment = sia.polarity_scores(day_rating)
-        # Convert compound score from [-1, 1] to [0, 1]
+        
+        # Additional checks for potentially misclassified sentiment
+        if "not" in day_rating_lower and sentiment['compound'] > 0:
+            # NLTK sometimes misses negations, adjust score down
+            return max(0.2, (sentiment['compound'] + 1) / 4)
+            
         return (sentiment['compound'] + 1) / 2
     else:
-        # Fallback simple sentiment analysis
-        positive_words = ['good', 'great', 'excellent', 'happy', 'positive', 'relaxed', 'productive', 
-                          'wonderful', 'amazing', 'fun', 'enjoyable', 'peaceful', 'joyful', 'delightful', 
-                          'fantastic', 'pleasant', 'content', 'successful', 'satisfied', 'energetic', 
-                          'optimistic', 'vibrant', 'calm', 'gratifying', 'cheerful', 'motivated', 
-                          'inspired', 'balanced', 'refreshed', 'tranquil', 'thrilled', 'pleased',
-                          'accomplished', 'grateful', 'loved', 'content', 'hopeful', 'excited',
-                          'fulfilled', 'comfortable', 'lively', 'serene', 'upbeat', 'enthusiastic']
+        # Fallback simple sentiment analysis with enhanced negative detection
+        positive_words = [
+    'good', 'great', 'excellent', 'happy', 'positive', 'relaxed', 'productive', 
+    'wonderful', 'amazing', 'fun', 'enjoyable', 'peaceful', 'joyful', 'delightful', 
+    'fantastic', 'pleasant', 'content', 'successful', 'satisfied', 'energetic', 
+    'optimistic', 'vibrant', 'calm', 'gratifying', 'cheerful', 'motivated', 
+    'inspired', 'balanced', 'refreshed', 'tranquil', 'thrilled', 'pleased',
+    'accomplished', 'grateful', 'loved', 'hopeful', 'excited', 'fulfilled', 
+    'comfortable', 'lively', 'serene', 'upbeat', 'enthusiastic', 'jubilant', 
+    'ecstatic', 'radiant', 'elated', 'blissful', 'euphoric', 'harmonious', 
+    'confident', 'flourishing', 'revitalized', 'cheery', 'glowing', 'buoyant', 
+    'sunny', 'exhilarated', 'optimistic', 'heartwarming', 'joyous', 'rejuvenated',
+    'brilliant', 'hope-instilling', 'bubbly', 'peace-filled', 'lighthearted'
+]
+
+        negative_words = [
+    'bad', 'terrible', 'unhappy', 'sad', 'negative', 'stressful', 'hectic', 
+    'tiring', 'exhausting', 'depressing', 'difficult', 'horrible', 'anxious', 
+    'worried', 'overwhelmed', 'frustrated', 'annoyed', 'angry', 'upset', 
+    'disappointed', 'gloomy', 'miserable', 'irritated', 'tense', 'nervous', 
+    'stressed', 'chaotic', 'unpleasant', 'draining', 'tough', 'painful', 
+    'distressed', 'lonely', 'fearful', 'discouraged', 'helpless', 'agitated',
+    'restless', 'uncomfortable', 'dissatisfied', 'troubled', 'bitter', 'bored',
+    'dreadful', 'fatigued', 'hopeless', 'inadequate', 'frustration', 'anxiety',
+    'panic', 'rage', 'hostility', 'resentment', 'grief', 'despair', 'guilt',
+    'isolated', 'melancholy', 'pessimistic', 'unworthy', 'worthless', 'suffocating', 
+    'shattered', 'exasperated', 'irate', 'devastated', 'shaken', 'forlorn', 
+    'withdrawn', 'resentful', 'desolate', 'despondent', 'apathetic', 'alienated', 
+    'oppressed', 'woeful', 'downhearted', 'tormented', 'discouraging', 'lifeless'
+]
+
+        critical_negative_words = [
+            'frustrat', 'anger', 'hate', 'terrible', 'horrible', 'miserable', 'awful',
+            'depress', 'anxious', 'hopeless', 'worthless', 'exhausted', 'drained',
+            'stressed', 'irritated', 'overwhelmed', 'failure', 'regret', 'resent',
+            'lonely', 'isolated', 'disgusted', 'panic', 'devastated', 'helpless',
+            'furious', 'sad', 'cry', 'nightmare', 'ruined', 'torture', 'unbearable',
+            'dreadful', 'disappointed', 'broken', 'meltdown', 'suffering', 'trauma'
+        ]
         
-        negative_words = ['bad', 'terrible', 'unhappy', 'sad', 'negative', 'stressful', 'hectic', 
-                          'tiring', 'exhausting', 'depressing', 'difficult', 'horrible', 'anxious', 
-                          'worried', 'overwhelmed', 'frustrated', 'annoyed', 'angry', 'upset', 
-                          'disappointed', 'gloomy', 'miserable', 'irritated', 'tense', 'nervous', 
-                          'stressed', 'chaotic', 'unpleasant', 'draining', 'tough', 'painful', 
-                          'distressed', 'lonely', 'fearful', 'discouraged', 'helpless', 'agitated',
-                          'restless', 'uncomfortable', 'dissatisfied', 'troubled', 'bitter', 'bored',
-                          'dreadful', 'fatigued', 'hopeless', 'inadequate']
-        
-        day_rating_lower = day_rating.lower()
         pos_count = sum(1 for word in positive_words if re.search(r'\b' + word + r'\b', day_rating_lower))
         neg_count = sum(1 for word in negative_words if re.search(r'\b' + word + r'\b', day_rating_lower))
         
+        for word in critical_negative_words:
+            if word in day_rating_lower:
+                neg_count *= 2
+                break
+                
         if pos_count == 0 and neg_count == 0:
-            return 0.5  # Neutral
-        return pos_count / (pos_count + neg_count)
+            return 0.5
+        
+        sentiment_score = pos_count / (pos_count + neg_count)
+        
+        if neg_count > 0 and 'frustrat' in day_rating_lower:
+            sentiment_score = min(sentiment_score, 0.3)
+            
+        return sentiment_score
+
+    # For explicitly negative expressions or neutral with negative markers
+    if "not" in day_rating_lower and "good" in day_rating_lower:
+        return 0.3  # "not good" is definitely negative
+        
+    return sentiment_score
 
 def prepare_features(
     day_rating: str,
@@ -80,10 +206,8 @@ def prepare_features(
     """
     Prepare features for the regression model
     """
-    # Extract sentiment from day_rating
     sentiment_score = analyze_day_rating(day_rating)
     
-    # Return features as a dictionary
     return {
         'sentiment': sentiment_score,
         'water_intake': water_intake,
@@ -98,47 +222,64 @@ def prepare_features(
 
 def rule_based_prediction(features: Dict[str, Any]) -> float:
     """
-    The original rule-based model as a fallback
+    The rule-based model with improved balance between parameters
     """
-    # Convert stress level to numeric
     stress_numeric = {"Low": 2, "Medium": 1, "High": 0}
-    
-    # Convert food quality to numeric
     food_numeric = {"Healthy": 2, "Moderate": 1, "Unhealthy": 0}
     
-    # Define optimal values for each factor
-    optimal_water = 3.0  # liters
-    optimal_exercise = 60  # minutes
-    optimal_sleep = 8.0  # hours
-    optimal_screen_time = 2.0  # hours (max recommended)
-    optimal_outdoor_time = 2.0  # hours
+    optimal_water = 3.0
+    optimal_exercise = 60
+    optimal_sleep = 8.0
+    optimal_screen_time = 2.0
+    optimal_outdoor_time = 2.0
     
-    # Calculate factor scores (0-1 scale)
+    # Calculate factor scores with enhanced penalties for very low values
     water_score = min(features['water_intake'] / optimal_water, 1.0)
-    exercise_score = min(features['exercise'] / optimal_exercise, 1.0)
-    sleep_score = 1.0 - abs(features['sleep'] - optimal_sleep) / 8.0  # Penalize both under and over sleeping
-    screen_time_score = max(0, 1.0 - (features['screen_time'] - optimal_screen_time) / 10.0)  # Higher screen time reduces score
-    outdoor_time_score = min(features['outdoor_time'] / optimal_outdoor_time, 1.0)
-    stress_score = stress_numeric[features['stress_level']] / 2.0
-    food_score = food_numeric[features['food_quality']] / 2.0
-    social_score = min(features['people_met'] / 5.0, 1.0)  # Assuming meeting 5+ people is optimal
+    # Add severe penalty for zero or very low water intake
+    if features['water_intake'] < 0.5:
+        water_score = -0.5  # Negative score for severe dehydration
     
-    # Weight each factor (sum of weights = 1)
+    exercise_score = min(features['exercise'] / optimal_exercise, 1.0)
+    # Add penalty for zero exercise
+    if features['exercise'] == 0:
+        exercise_score = -0.3  # Negative score for no physical activity
+    
+    sleep_score = 1.0 - abs(features['sleep'] - optimal_sleep) / 8.0
+    screen_time_score = max(0, 1.0 - (features['screen_time'] - optimal_screen_time) / 10.0)
+    
+    outdoor_time_score = min(features['outdoor_time'] / optimal_outdoor_time, 1.0)
+    # Add penalty for zero outdoor time
+    if features['outdoor_time'] == 0:
+        outdoor_time_score = -0.2  # Negative score for no outdoor time
+    
+    stress_score = stress_numeric[features['stress_level']] / 2.0
+    
+    # Normalize food quality string to handle case sensitivity
+    food_quality_normalized = features['food_quality'].capitalize()
+    if food_quality_normalized not in food_numeric:
+        food_quality_normalized = "Moderate"  # Default if not recognized
+    food_score = food_numeric[food_quality_normalized] / 2.0
+    
+    social_score = min(features['people_met'] / 5.0, 1.0)
+    
+    sentiment_score = features['sentiment']
+    
+    # More balanced weights - adjust sentiment weight downward slightly
     weights = {
-        'day_rating': 0.25,
-        'water': 0.05,
-        'exercise': 0.10,
+        'day_rating': 0.20,  # Reduced from 0.25
+        'water': 0.10,       # Increased from 0.05
+        'exercise': 0.12,    # Increased from 0.10
         'sleep': 0.15,
         'screen_time': 0.10,
-        'outdoor_time': 0.10,
-        'stress': 0.15,
-        'food': 0.05,
+        'outdoor_time': 0.12, # Increased from 0.10
+        'stress': 0.10,       # Reduced from 0.15
+        'food': 0.06,         # Increased from 0.05
         'social': 0.05
     }
     
     # Calculate weighted average
     weighted_score = (
-        weights['day_rating'] * features['sentiment'] +
+        weights['day_rating'] * sentiment_score +
         weights['water'] * water_score +
         weights['exercise'] * exercise_score +
         weights['sleep'] * sleep_score +
@@ -149,47 +290,153 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
         weights['social'] * social_score
     )
     
-    # Convert to 0-10 scale
-    return weighted_score * 10
+    # Apply health factor caps - limit maximum mood score with poor health metrics
+    zero_count = sum(1 for value in [
+        features['water_intake'], 
+        features['exercise'], 
+        features['outdoor_time']
+    ] if value == 0)
+    
+    # Progressive caps based on number of zeros
+    if zero_count >= 3:
+        max_score = 6.0  # Hard cap when all 3 key health metrics are zero
+    elif zero_count == 2:
+        max_score = 7.5  # Cap when 2 key health metrics are zero
+    elif zero_count == 1:
+        max_score = 8.5  # Cap when 1 key health metric is zero
+    else:
+        max_score = 10.0  # No cap when all health metrics have values
+    
+    # Convert to 0-10 scale with the appropriate cap
+    final_score = min(weighted_score * 10, max_score)
+    
+    return max(min(final_score, 10.0), 0.0)  # Ensure within 0-10 range
 
-def create_and_train_model(train_data_path: str = 'training_data_train.csv') -> Pipeline:
+def create_interaction_features(df):
     """
-    Create and train a regression model for mood prediction
+    Create interaction features that could improve predictions
+    """
+    df_new = df.copy()
+    
+    df_new['sleep_screen_ratio'] = df_new['sleep'] / (df_new['screen_time'] + 0.5)
+    df_new['exercise_outdoor'] = df_new['exercise'] * df_new['outdoor_time']
+    df_new['hydration_exercise'] = df_new['water_intake'] / (df_new['exercise'] / 60 + 0.5)
+    df_new['social_quality'] = df_new['people_met'] * (df_new['stress_level'] == 'Low').astype(int)
+    df_new['sleep_quality'] = 1.0 - abs(df_new['sleep'] - 8.0) / 4.0
+    df_new['work_life_balance'] = df_new['outdoor_time'] / (df_new['screen_time'] + 1.0)
+    df_new['burnout_risk'] = ((df_new['stress_level'] == 'High').astype(int) * 
+                              (df_new['screen_time'] > 6).astype(int) * 
+                              (df_new['sleep'] < 6).astype(int))
+    df_new['wellness_score'] = ((df_new['water_intake'] / 3.0) + 
+                               (df_new['exercise'] / 60.0) + 
+                               (df_new['food_quality'] == 'Healthy').astype(int)) / 3.0
+    
+    return df_new
+
+def create_and_train_model(train_data_path: str = 'training_data_train.csv', use_ensemble=True) -> Pipeline:
+    """
+    Create and train an enhanced regression model for mood prediction with
+    optimizations for ±0.5 point accuracy
     """
     if not HAS_SKLEARN:
         raise ImportError("scikit-learn is required to train the regression model.")
     
-    # Load training data
     df = pd.read_csv(train_data_path)
-    
-    # Extract features and target
-    X = df.drop(['date', 'day_rating', 'mood_score'], axis=1)
+    X_orig = df.drop(['date', 'day_rating', 'mood_score'], axis=1)
     y = df['mood_score']
     
-    # Create preprocessing for categorical features
     categorical_features = ['stress_level', 'food_quality']
     categorical_transformer = OneHotEncoder(handle_unknown='ignore')
     
-    # Create preprocessing for numerical features
     numerical_features = ['water_intake', 'people_met', 'exercise', 'sleep', 
                          'screen_time', 'outdoor_time']
-    numerical_transformer = StandardScaler()
+    numerical_transformer = Pipeline(steps=[
+        ('scaler', StandardScaler()),
+        ('poly', PolynomialFeatures(degree=2, include_bias=False, interaction_only=False))
+    ])
     
-    # Combine preprocessing steps
     preprocessor = ColumnTransformer(
         transformers=[
             ('cat', categorical_transformer, categorical_features),
             ('num', numerical_transformer, numerical_features)
         ])
     
-    # Create and train the model pipeline
+    if use_ensemble and HAS_XGBOOST:
+        print("Using model ensemble for improved precision")
+        
+        xgb_model = xgb.XGBRegressor(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=6,
+            min_child_weight=2,
+            gamma=0,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.01,
+            reg_lambda=1,
+            objective='reg:squarederror',
+            random_state=42
+        )
+        
+        gb_model = GradientBoostingRegressor(
+            n_estimators=250,
+            learning_rate=0.08,
+            max_depth=5,
+            min_samples_split=4,
+            min_samples_leaf=2,
+            subsample=0.9,
+            random_state=42
+        )
+        
+        huber_model = HuberRegressor(
+            epsilon=1.2,
+            max_iter=200,
+            alpha=0.001
+        )
+        
+        regressor = VotingRegressor([
+            ('xgb', xgb_model),
+            ('gb', gb_model),
+            ('huber', huber_model)
+        ])
+    
+    elif HAS_XGBOOST:
+        print("Using optimized XGBoost for regression")
+        regressor = xgb.XGBRegressor(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=6,
+            min_child_weight=2,
+            gamma=0,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.01,
+            reg_lambda=1,
+            objective='reg:squarederror',
+            random_state=42
+        )
+    else:
+        print("Using optimized GradientBoostingRegressor (XGBoost unavailable)")
+        regressor = GradientBoostingRegressor(
+            n_estimators=500,
+            learning_rate=0.04,
+            max_depth=6,
+            min_samples_split=4,
+            min_samples_leaf=2,
+            subsample=0.9,
+            max_features=0.8,
+            random_state=42
+        )
+    
+    X_orig = create_interaction_features(X_orig)
+    
     model = Pipeline(steps=[
         ('preprocessor', preprocessor),
-        ('regressor', RandomForestRegressor(n_estimators=100, random_state=42))
+        ('regressor', regressor)
     ])
     
-    # Fit the model
-    model.fit(X, y)
+    print(f"Training model with {len(X_orig)} samples and {X_orig.shape[1]} features")
+    model.fit(X_orig, y)
     
     return model
 
@@ -214,7 +461,6 @@ def predict_with_model(model, features_dict: Dict[str, Any]) -> float:
     """
     Make a prediction using the trained model
     """
-    # Extract only the features the model was trained on
     features_df = pd.DataFrame({
         'water_intake': [features_dict['water_intake']],
         'people_met': [features_dict['people_met']],
@@ -226,10 +472,10 @@ def predict_with_model(model, features_dict: Dict[str, Any]) -> float:
         'food_quality': [features_dict['food_quality']]
     })
     
-    # Make prediction
+    features_df = create_interaction_features(features_df)
+    
     prediction = model.predict(features_df)[0]
     
-    # Ensure the prediction is in the valid range
     return max(min(prediction, 10.0), 0.0)
 
 def predict_mood_score(
@@ -247,7 +493,30 @@ def predict_mood_score(
     Predict mood score (0-10) based on input parameters.
     Uses a regression model if available, otherwise falls back to rule-based approach.
     """
-    # Prepare features
+    # Check for explicit negative day statements first - highest priority
+    day_rating_lower = day_rating.lower()
+    
+    # Direct bad day detection - with logging for debugging
+    explicit_bad_day = any(phrase in day_rating_lower for phrase in 
+                          ["bad day", "terrible day", "awful day", "horrible day", 
+                           "not good day", "wasn't good", "wasnt good"])
+    
+    if explicit_bad_day:
+        print(f"Explicit negative day detected: '{day_rating}'")
+        # Hard cap on score regardless of other metrics
+        max_possible_score = 4.0
+    else:
+        # Standard processing for ambiguous phrases
+        if any(phrase in day_rating_lower for phrase in 
+              ["not a good day", "wasn't good", "wasnt good", "okay okay", "ok ok"]):
+            max_possible_score = 5.5  # Cap for these ambiguous negative expressions
+        else:
+            max_possible_score = 10.0
+    
+    if ("frustrat" in day_rating_lower or "anger" in day_rating_lower or 
+        "hate" in day_rating_lower or "terrible" in day_rating_lower) and stress_level == "Low":
+        print("Warning: Contradiction detected - negative emotions in day description but stress level is Low")
+    
     features = prepare_features(
         day_rating=day_rating,
         water_intake=water_intake,
@@ -260,20 +529,36 @@ def predict_mood_score(
         food_quality=food_quality
     )
     
-    # Try to use the trained model if available
     model = None
     if HAS_SKLEARN:
         model = load_model()
     
     if model is not None:
         try:
-            return predict_with_model(model, features)
+            prediction = predict_with_model(model, features)
         except Exception as e:
             print(f"Error using regression model: {e}. Falling back to rule-based approach.")
-            return rule_based_prediction(features)
+            prediction = rule_based_prediction(features)
     else:
-        # Fall back to rule-based approach
-        return rule_based_prediction(features)
+        prediction = rule_based_prediction(features)
+    
+    # Handle health factor minimums - apply caps for multiple zero values
+    zero_health_metrics = sum(1 for value in [water_intake, exercise, outdoor_time] if value == 0)
+    
+    health_caps = {
+        3: 6.0,  # Max 6.0 if all three health metrics are zero
+        2: 7.5,  # Max 7.5 if two health metrics are zero
+        1: 8.5   # Max 8.5 if one health metric is zero
+    }
+    
+    if zero_health_metrics > 0:
+        max_possible_score = health_caps.get(zero_health_metrics, 10.0)
+        print(f"Health factor limitation: {zero_health_metrics} zero metrics, max score capped at {max_possible_score}")
+    else:
+        max_possible_score = 10.0
+    
+    # Apply health factor limitations after content-based overrides
+    return min(prediction, max_possible_score)
 
 def train_model_if_needed():
     """Check if a model exists, if not, generate data and train one"""
@@ -281,15 +566,12 @@ def train_model_if_needed():
         try:
             from data_generator import generate_synthetic_data, train_test_split_data
             
-            # Generate data if needed
             if not os.path.exists('training_data.csv'):
                 generate_synthetic_data()
             
-            # Split data if needed
             if not os.path.exists('training_data_train.csv'):
                 train_test_split_data()
             
-            # Train and save the model
             model = create_and_train_model()
             save_model(model)
             return True

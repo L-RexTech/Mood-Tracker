@@ -22,22 +22,33 @@ def generate_recommendations(
     max_screen_time = 4.0  # hours
     optimal_outdoor_time = 1.0  # hour
     
-    # Check each parameter and provide recommendations
-    if water_intake < optimal_water:
+    # Enhanced recommendations for critical health factors
+    # Water intake - more urgent message for zero intake
+    if water_intake == 0:
+        recommendations.append("URGENT: Hydration is critical for health and mood. Start drinking water immediately and aim for at least 2.5 liters daily.")
+    elif water_intake < optimal_water:
         recommendations.append(f"Try to drink at least {optimal_water} liters of water daily for better energy and mood.")
     
-    if exercise < optimal_exercise:
+    # Exercise - stronger recommendation for zero exercise
+    if exercise == 0:
+        recommendations.append("IMPORTANT: Physical activity is essential for mood regulation. Even 15 minutes of light exercise can significantly improve your mood.")
+    elif exercise < optimal_exercise:
         recommendations.append(f"Aim for at least {optimal_exercise} minutes of exercise daily to boost endorphins.")
     
+    # Sleep recommendations
     if sleep < 7.0:
         recommendations.append("Insufficient sleep can affect mood. Aim for 7-9 hours of quality sleep.")
     elif sleep > 9.0:
         recommendations.append("Too much sleep can also affect mood. Try to maintain a consistent sleep schedule.")
     
+    # Screen time recommendations
     if screen_time > max_screen_time:
         recommendations.append("Consider reducing screen time, especially before bed, to improve mood and sleep quality.")
     
-    if outdoor_time < optimal_outdoor_time:
+    # Outdoor time - stronger recommendation for zero outdoor time
+    if outdoor_time == 0:
+        recommendations.append("IMPORTANT: Time outdoors is vital for vitamin D production and mental health. Try to get outside for at least 30 minutes daily.")
+    elif outdoor_time < optimal_outdoor_time:
         recommendations.append("Spending time outdoors in natural light can improve mood. Try to get outside for at least an hour daily.")
     
     if stress_level in ["Medium", "High"]:
@@ -61,5 +72,12 @@ def generate_recommendations(
     if people_met < 2:
         recommendations.append("Social interaction can improve mood. Try to connect with friends or family regularly.")
     
+    # Prioritize recommendations for zero values
+    zero_recommendations = [r for r in recommendations if r.startswith("URGENT") or r.startswith("IMPORTANT")]
+    other_recommendations = [r for r in recommendations if not (r.startswith("URGENT") or r.startswith("IMPORTANT"))]
+    
+    # Combine with zero recommendations first
+    prioritized_recommendations = zero_recommendations + other_recommendations
+    
     # Limit to top 5 recommendations to avoid overwhelming the user
-    return recommendations[:5]
+    return prioritized_recommendations[:5]
