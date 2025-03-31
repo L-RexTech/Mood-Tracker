@@ -17,6 +17,6 @@ pip install --no-cache-dir pandas numpy matplotlib
 
 # Train model to make sure it's available
 echo "Pre-training model for deployment..."
-python train_model.py --samples 1000
+python train_model.py --samples 10000
 
 echo "Setup complete!"
