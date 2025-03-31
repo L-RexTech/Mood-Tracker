@@ -1,0 +1,8 @@
+{
+  "rmse": 0.7566636984156173,
+  "mae": 0.5984225000000001,
+  "r_squared": 0.7413366461768383,
+  "within_half_point_percentage": 51.0,
+  "within_one_point_percentage": 79.5,
+  "timestamp": "2025-03-31T21:37:07.470572"
+}
