@@ -227,11 +227,21 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
     stress_numeric = {"Low": 2, "Medium": 1, "High": 0}
     food_numeric = {"Healthy": 2, "Moderate": 1, "Unhealthy": 0}
     
-    optimal_water = 3.0
-    optimal_exercise = 60
-    optimal_sleep = 8.0
-    optimal_screen_time = 2.0
-    optimal_outdoor_time = 2.0
+    # Define optimal values and ranges
+    optimal_water = 3.0  # liters
+    min_optimal_water = 2.5  # minimum acceptable for "optimal" range
+    
+    optimal_exercise = 60  # minutes
+    min_optimal_exercise = 30  # minimum acceptable for "optimal" range
+    
+    optimal_sleep = 8.0  # hours
+    sleep_tolerance = 1.0  # ±1 hour is still considered optimal
+    
+    optimal_screen_time = 2.0  # hours
+    max_optimal_screen = 3.0  # maximum acceptable for "optimal" range
+    
+    optimal_outdoor_time = 2.0  # hours
+    max_optimal_outdoor = 4.0  # maximum acceptable for "optimal" range
     
     # Calculate factor scores with enhanced penalties for very low values
     water_score = min(features['water_intake'] / optimal_water, 1.0)
@@ -248,9 +258,11 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
     screen_time_score = max(0, 1.0 - (features['screen_time'] - optimal_screen_time) / 10.0)
     
     outdoor_time_score = min(features['outdoor_time'] / optimal_outdoor_time, 1.0)
-    # Add penalty for zero outdoor time
+    # Add penalty for zero outdoor time but also for excessive values
     if features['outdoor_time'] == 0:
         outdoor_time_score = -0.2  # Negative score for no outdoor time
+    elif features['outdoor_time'] > 6:
+        outdoor_time_score = 0.8  # Cap at 0.8 for very high values (likely errors or exaggeration)
     
     stress_score = stress_numeric[features['stress_level']] / 2.0
     
@@ -264,7 +276,6 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
     
     sentiment_score = features['sentiment']
     
-    # More balanced weights - adjust sentiment weight downward slightly
     weights = {
         'day_rating': 0.20,  # Reduced from 0.25
         'water': 0.10,       # Increased from 0.05
@@ -290,27 +301,37 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
         weights['social'] * social_score
     )
     
-    # Apply health factor caps - limit maximum mood score with poor health metrics
-    zero_count = sum(1 for value in [
-        features['water_intake'], 
-        features['exercise'], 
-        features['outdoor_time']
-    ] if value == 0)
+    # Check for non-optimal values to cap perfect scores
+    suboptimal_metrics = []
     
-    # Progressive caps based on number of zeros
-    if zero_count >= 3:
-        max_score = 6.0  # Hard cap when all 3 key health metrics are zero
-    elif zero_count == 2:
-        max_score = 7.5  # Cap when 2 key health metrics are zero
-    elif zero_count == 1:
-        max_score = 8.5  # Cap when 1 key health metric is zero
-    else:
-        max_score = 10.0  # No cap when all health metrics have values
+    if features['water_intake'] < min_optimal_water:
+        suboptimal_metrics.append(f"water intake ({features['water_intake']:.1f}L vs {min_optimal_water}L min)")
+        
+    if features['exercise'] < min_optimal_exercise:
+        suboptimal_metrics.append(f"exercise ({features['exercise']} min vs {min_optimal_exercise} min)")
+        
+    if abs(features['sleep'] - optimal_sleep) > sleep_tolerance:
+        suboptimal_metrics.append(f"sleep ({features['sleep']:.1f} hrs vs {optimal_sleep-sleep_tolerance}-{optimal_sleep+sleep_tolerance} optimal)")
+        
+    if features['outdoor_time'] < 1.0:
+        suboptimal_metrics.append(f"outdoor time ({features['outdoor_time']:.1f} hrs vs 1.0 min)")
+    elif features['outdoor_time'] > max_optimal_outdoor:
+        suboptimal_metrics.append(f"excessive outdoor time ({features['outdoor_time']:.1f} hrs)")
     
-    # Convert to 0-10 scale with the appropriate cap
-    final_score = min(weighted_score * 10, max_score)
+    # Convert to 0-10 scale
+    raw_score = weighted_score * 10
     
-    return max(min(final_score, 10.0), 0.0)  # Ensure within 0-10 range
+    # Apply strict caps for high scores based on non-optimal metrics
+    if len(suboptimal_metrics) > 0:
+        if raw_score > 9.5:  # If we're getting close to a perfect score
+            # Cap based on number of suboptimal metrics
+            max_possible = 9.7 - (len(suboptimal_metrics) * 0.4)
+            capped_score = min(raw_score, max_possible)
+            if raw_score > capped_score:
+                print(f"Score capped from {raw_score:.1f} to {capped_score:.1f} due to: {', '.join(suboptimal_metrics)}")
+            raw_score = capped_score
+    
+    return max(min(raw_score, 9.9), 0.0)  # Max 9.9 to prevent perfect 10.0 unless all is optimal
 
 def create_interaction_features(df):
     """
@@ -557,7 +578,24 @@ def predict_mood_score(
     else:
         max_possible_score = 10.0
     
-    # Apply health factor limitations after content-based overrides
+    # Add strict caps for perfect scores
+    # Perfect scores (10.0) should only be possible when all parameters are optimal
+    perfect_score_possible = (
+        analyze_day_rating(day_rating) > 0.95 and
+        water_intake >= 2.5 and
+        exercise >= 30 and
+        (7.0 <= sleep <= 9.0) and
+        screen_time <= 3.0 and
+        (1.0 <= outdoor_time <= 4.0) and
+        stress_level == "Low" and
+        food_quality.capitalize() == "Healthy"
+    )
+    
+    # Apply perfect score restriction
+    if prediction >= 9.9 and not perfect_score_possible:
+        prediction = 9.7  # Cap at 9.7 if not all metrics are ideal
+        print("Score capped at 9.7 since not all metrics are in optimal ranges")
+    
     return min(prediction, max_possible_score)
 
 def train_model_if_needed():
