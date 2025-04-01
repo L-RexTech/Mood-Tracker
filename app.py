@@ -1,9 +1,17 @@
+import os
+import sys
+
+# Set NLTK data path for Railway deployment
+os.environ['NLTK_DATA'] = '/app/nltk_data'
+if os.path.exists('/app/nltk_data'):
+    import nltk
+    nltk.data.path.append('/app/nltk_data')
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Literal
 from model import predict_mood_score, train_model_if_needed
 from recommendations import generate_recommendations
-import os
 
 # Check if model exists, train if needed
 train_model_if_needed()
