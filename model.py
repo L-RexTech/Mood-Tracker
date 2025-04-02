@@ -3,7 +3,7 @@ import os
 import pickle
 import pandas as pd
 import numpy as np
-from typing import Literal, Dict, Any, Union
+from typing import TYPE_CHECKING,Literal, Dict, Any, Union
 from pathlib import Path
 
 # Try to import machine learning libraries
@@ -11,6 +11,8 @@ try:
     from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, VotingRegressor
     from sklearn.preprocessing import OneHotEncoder, PolynomialFeatures
     from sklearn.compose import ColumnTransformer
+    if TYPE_CHECKING:
+        from sklearn.pipeline import Pipeline
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.linear_model import HuberRegressor
