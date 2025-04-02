@@ -1,8 +1,8 @@
 {
-  "rmse": 0.7536319473860631,
-  "mae": 0.5472512790250594,
-  "r_squared": 0.7767322326945197,
-  "within_half_point_percentage": 56.3816604708798,
-  "within_one_point_percentage": 86.27013630731103,
-  "timestamp": "2025-03-31T23:54:16.450024"
+  "rmse": 0.7545948124096064,
+  "mae": 0.5473615864584345,
+  "r_squared": 0.7761613597227877,
+  "within_half_point_percentage": 56.08426270136307,
+  "within_one_point_percentage": 86.18339529120198,
+  "timestamp": "2025-04-02T23:08:12.389804"
 }

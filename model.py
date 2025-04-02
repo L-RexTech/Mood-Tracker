@@ -1,16 +1,10 @@
 import re
 import os
-import sys
 import pickle
 import pandas as pd
 import numpy as np
 from typing import Literal, Dict, Any, Union
 from pathlib import Path
-
-# Set NLTK data path for Railway deployment
-nltk_data_path = '/app/nltk_data'
-if os.path.exists(nltk_data_path):
-    os.environ['NLTK_DATA'] = nltk_data_path
 
 # Try to import machine learning libraries
 try:
@@ -34,7 +28,7 @@ except ImportError:
 try:
     from nltk.sentiment import SentimentIntensityAnalyzer
     import nltk
-    nltk.download('vader_lexicon', quiet=True, download_dir=os.environ.get('NLTK_DATA', None))
+    nltk.download('vader_lexicon', quiet=True)
     HAS_NLTK = True
 except ImportError:
     HAS_NLTK = False
