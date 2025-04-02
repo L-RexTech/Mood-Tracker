@@ -75,4 +75,10 @@ async def predict_mood(input_data: MoodInput):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import os
+    
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get("PORT", 8000))
+    
+    # Bind to 0.0.0.0 to be accessible from outside the container
+    uvicorn.run(app, host="0.0.0.0", port=port)
