@@ -52,6 +52,7 @@ def analyze_day_rating(day_rating: str) -> float:
         print(f"Direct negative day description detected: '{day_rating}'")
         return 0.15  # Very low score (1.5 on 0-10 scale)
     
+    
     # Check for specific negation patterns
     negation_patterns = [
         "not good", "not great", "not a good", "not the best", 
@@ -278,17 +279,27 @@ def rule_based_prediction(features: Dict[str, Any]) -> float:
     
     sentiment_score = features['sentiment']
     
+    # Increase day_rating weight when sentiment is very negative
+    day_rating_weight = 0.3 if sentiment_score < 0.3 else 0.20
+    
     weights = {
-        'day_rating': 0.20,  # Reduced from 0.25
-        'water': 0.10,       # Increased from 0.05
-        'exercise': 0.12,    # Increased from 0.10
+        'day_rating': day_rating_weight,  # Increased weight for negative sentiments
+        'water': 0.10,
+        'exercise': 0.12,
         'sleep': 0.15,
         'screen_time': 0.10,
-        'outdoor_time': 0.12, # Increased from 0.10
-        'stress': 0.10,       # Reduced from 0.15
-        'food': 0.06,         # Increased from 0.05
+        'outdoor_time': 0.12,
+        'stress': 0.10,
+        'food': 0.06,
         'social': 0.05
     }
+    
+    # Normalize weights if day_rating weight changed
+    if day_rating_weight > 0.20:
+        weight_sum = sum(weights.values())
+        for key in weights:
+            if key != 'day_rating':
+                weights[key] = weights[key] * (1 - day_rating_weight) / (weight_sum - day_rating_weight)
     
     # Calculate weighted average
     weighted_score = (
@@ -524,6 +535,11 @@ def predict_mood_score(
                           ["bad day", "terrible day", "awful day", "horrible day", 
                            "not good day", "wasn't good", "wasnt good"])
     
+    # Add specific check for "not a good day" pattern
+    if "not a good day" in day_rating_lower or "not a good" in day_rating_lower:
+        explicit_bad_day = True
+        print(f"Explicit negation detected: '{day_rating}'")
+    
     if explicit_bad_day:
         print(f"Explicit negative day detected: '{day_rating}'")
         # Hard cap on score regardless of other metrics
@@ -535,6 +551,13 @@ def predict_mood_score(
             max_possible_score = 5.5  # Cap for these ambiguous negative expressions
         else:
             max_possible_score = 10.0
+    
+    # Add additional cap for direct negation patterns
+    for pattern in ["not good", "not great", "not a good", "not the best"]:
+        if pattern in day_rating_lower:
+            max_possible_score = min(max_possible_score, 5.0)
+            print(f"Negation pattern '{pattern}' detected, capping score at {max_possible_score}")
+            break
     
     if ("frustrat" in day_rating_lower or "anger" in day_rating_lower or 
         "hate" in day_rating_lower or "terrible" in day_rating_lower) and stress_level == "Low":
