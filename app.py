@@ -40,6 +40,7 @@ class MoodInput(BaseModel):
 class Recommendation(BaseModel):
     priority: Literal["High", "Medium", "Low"]
     recommendation: str
+    category: str
 
 class MoodOutput(BaseModel):
     mood_score: float = Field(description="Predicted mood score (0-10)")
