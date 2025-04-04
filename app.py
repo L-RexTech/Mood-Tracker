@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Literal
 from model import predict_mood_score, train_model_if_needed
@@ -10,6 +11,15 @@ train_model_if_needed()
 
 app = FastAPI(title="Mood Tracker API", 
               description="API to predict mood score based on daily habits and provide recommendations")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 class MoodInput(BaseModel):
     day_rating: str = Field(description="Text description of your day")
