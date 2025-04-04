@@ -33,15 +33,17 @@ def generate_recommendations(
     # Exercise - stronger recommendation for zero exercise
     if exercise == 0:
         recommendations.append(("Physical activity is essential for mood regulation. Even 15 minutes of light exercise can significantly improve your mood.", "High", "Exercise"))
-    elif exercise < optimal_exercise:
+    elif exercise < optimal_exercise/2:
         recommendations.append((f"Aim for at least {optimal_exercise} minutes of exercise daily to boost endorphins.", "Medium", "Exercise"))
-    
+    else:
+        recommendations.append(("Great job on exercising! You can do more to enhance your mood.", "Low", "Exercise"))
+
     # Sleep recommendations
     if sleep < 7.0:
         if sleep < 5.0:
             recommendations.append(("Sleep is crucial for mental health. Aim for at least 7-9 hours of sleep per night.", "High", "Sleep"))
         else:
-            recommendations.append(("Try to get at least 7-9 hours of sleep per night for optimal mood and cognitive function.", "Medium", "Sleep"))
+            recommendations.append(("Try to get at least 7-9 hours of sleep per night for optimal mood and cognitive function.", "Low", "Sleep"))
     elif sleep > 9.0:
         recommendations.append(("Too much sleep can also affect mood. Try to maintain a consistent sleep schedule.", "Medium", "Sleep"))
     
@@ -56,7 +58,13 @@ def generate_recommendations(
         recommendations.append(("Spending time outdoors in natural light can improve mood. Try to get outside for at least an hour daily.", "Medium", "Outdoor Time"))
     
     if stress_level in ["Medium", "High"]:
-        stress_priority = "High" if stress_level == "High" else "Medium"
+        if stress_level == "High":
+            stress_priority = "High"
+        elif stress_level == "Medium":
+            stress_priority = "Medium"
+        else:
+            stress_priority = "Low"
+        
         stress_recommendations = [
             ("Practice deep breathing exercises for 5 minutes when feeling stressed.", stress_priority, "Stress Management"),
             ("Try meditation to manage stress and improve mindfulness.", stress_priority, "Stress Management"),
