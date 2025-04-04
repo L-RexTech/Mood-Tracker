@@ -1,4 +1,4 @@
-from typing import List, Literal, Tuple
+from typing import List, Literal, Tuple, Dict, Any
 
 def generate_recommendations(
     water_intake: float,
@@ -9,7 +9,7 @@ def generate_recommendations(
     outdoor_time: float,
     stress_level: Literal["Low", "Medium", "High"],
     food_quality: Literal["Healthy", "Moderate", "Unhealthy"]
-) -> List[str]:
+) -> List[Dict[str, str]]:
     """
     Generate personalized recommendations based on input parameters
     """
@@ -83,8 +83,8 @@ def generate_recommendations(
     priority_order = {"High": 0, "Medium": 1, "Low": 2}
     sorted_recommendations = sorted(recommendations, key=lambda x: priority_order[x[1]])
     
-    # Format recommendations with priority
-    formatted_recommendations = [f"{priority} Priority: {rec}" for rec, priority in sorted_recommendations]
+    # Create list of recommendation objects with priority and recommendation fields
+    recommendation_objects = [{"priority": priority, "recommendation": rec} for rec, priority in sorted_recommendations]
     
     # Limit to top 5 recommendations to avoid overwhelming the user
-    return formatted_recommendations[:5]
+    return recommendation_objects[:5]

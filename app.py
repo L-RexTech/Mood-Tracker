@@ -37,9 +37,13 @@ class MoodInput(BaseModel):
             raise ValueError(f"{field_name} seems unreasonably high")
         return v
 
+class Recommendation(BaseModel):
+    priority: Literal["High", "Medium", "Low"]
+    recommendation: str
+
 class MoodOutput(BaseModel):
     mood_score: float = Field(description="Predicted mood score (0-10)")
-    recommendations: List[str] = Field(description="Personalized recommendations")
+    recommendations: List[Recommendation] = Field(description="Personalized recommendations with priority levels")
 
 @app.post("/predict", response_model=MoodOutput, summary="Predict mood score")
 async def predict_mood(input_data: MoodInput):
