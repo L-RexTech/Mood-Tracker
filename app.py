@@ -37,7 +37,7 @@ class MoodInput(BaseModel):
     @classmethod
     def check_reasonable_values(cls, v, info):
         max_values = {
-            'water_intake': 10,
+            'water_intake': 15,
             'sleep': 24,
             'screen_time': 24,
             'outdoor_time': 24
