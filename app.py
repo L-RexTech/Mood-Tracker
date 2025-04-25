@@ -15,7 +15,9 @@ app = FastAPI(title="Mood Tracker API",
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://mental-health-app-wine.vercel.app"],  # Specify allowed origins
+    allow_origins=["http://localhost:3000", "https://mental-health-app-wine.vercel.app",
+                  "https://revibe-wine.vercel.app"
+                  ],  # Specify allowed origins
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
